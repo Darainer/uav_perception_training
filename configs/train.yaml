@@ -1,0 +1,31 @@
+# RF-DETR-Small fine-tuning config
+# Target hardware: RTX 3060 12GB (training), Orin Nano 8GB (inference)
+
+model:
+  variant: rfdetr_small          # RFDETRSmall class in rfdetr package
+  num_classes: 3                 # person, vehicle, animal
+
+training:
+  epochs: 100
+  batch_size: 8                 # Safe for 3060 12GB at 512x512 FP16
+  grad_accum_steps: 2           # Effective batch = 16
+  learning_rate: 1.0e-4
+  lr_encoder: 1.0e-5            # Lower LR for DINOv2 backbone
+  weight_decay: 1.0e-4
+
+  # Checkpointing
+  checkpoint_interval: 10       # Save checkpoint every N epochs
+  output_dir: models/checkpoints
+
+  # Early stopping
+  early_stopping: true
+  early_stopping_patience: 20   # Stop if no mAP improvement for N epochs
+
+data:
+  dataset_dir: data/splits      # rfdetr auto-discovers train/valid/test subdirs
+  resolution: 512               # Must be divisible by 56
+
+logging:
+  use_wandb: false              # Set true and add WANDB_API_KEY to use
+  project: uav_perception_training
+  tensorboard: true

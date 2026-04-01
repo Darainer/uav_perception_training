@@ -19,25 +19,22 @@ M3OT structure (from figshare):
         ├── sequence_001.txt    # MOT format: frame,id,x,y,w,h,conf,class,vis
         └── ...
 
-Output COCO format:
+Output directory structure (rfdetr expected layout):
     data/splits/
-    ├── train.json
-    ├── val.json
-    ├── test.json
-    └── images/
-        ├── train/
-        ├── val/
-        └── test/
+    ├── train/
+    │   └── _annotations.coco.json
+    ├── valid/
+    │   └── _annotations.coco.json
+    └── test/
+        └── _annotations.coco.json
 
 Usage:
-    python scripts/prepare_dataset.py --input data/raw/M3OT --output data/splits
-    python scripts/prepare_dataset.py --input data/raw/M3OT --output data/splits --modality IR
+    python scripts/prepare_dataset.py --config configs/dataset.yaml
+    python scripts/prepare_dataset.py --config configs/dataset.yaml --modality IR
 """
 
 import argparse
 import json
-import os
-import shutil
 import random
 from pathlib import Path
 from collections import defaultdict
@@ -47,34 +44,29 @@ import cv2
 from tqdm import tqdm
 
 
-# M3OT class label → our class index
-# Inspect your actual M3OT annotation files and adjust if labels differ
-M3OT_CLASS_MAP = {
-    "pedestrian": 0,   # person
-    "person":     0,
-    "car":        1,   # vehicle
-    "truck":      1,
-    "bus":        1,
-    "van":        1,
-    "freight_car": 1,
-}
+def load_dataset_config(path: str) -> dict:
+    with open(path) as f:
+        return yaml.safe_load(f)
 
-CATEGORIES = [
-    {"id": 0, "name": "person",  "supercategory": "living"},
-    {"id": 1, "name": "vehicle", "supercategory": "object"},
-    {"id": 2, "name": "animal",  "supercategory": "living"},
-]
 
-MIN_BOX_AREA = 16       # 4x4 pixels minimum
-MIN_VISIBILITY = 0.3    # drop heavily occluded instances
+def build_class_map(classes_cfg: dict) -> tuple[dict, list[dict]]:
+    """Build M3OT label → class index map and COCO categories from dataset.yaml."""
+    class_map = {}
+    categories = []
+    for class_id in sorted(classes_cfg.keys()):
+        cls = classes_cfg[class_id]
+        categories.append({"id": class_id, "name": cls["name"], "supercategory": "object"})
+        for m3ot_label in cls["m3ot_labels"]:
+            class_map[m3ot_label] = class_id
+    return class_map, categories
 
 
 def parse_mot_annotation(ann_file: Path) -> list[dict]:
     """Parse MOT-format annotation file.
-    
+
     MOT format: frame, id, bb_left, bb_top, bb_width, bb_height, conf, class, visibility
     Class field may be an integer or string depending on M3OT version.
-    
+
     Returns list of dicts with keys: frame, id, bbox (xywh), conf, class_name, visibility
     """
     annotations = []
@@ -117,11 +109,19 @@ def parse_mot_annotation(ann_file: Path) -> list[dict]:
     return annotations
 
 
-def build_coco_dataset(sequences: list[Path], image_root: Path, modality: str = "RGB") -> dict:
+def build_coco_dataset(
+    sequences: list[Path],
+    image_root: Path,
+    modality: str,
+    class_map: dict,
+    categories: list[dict],
+    min_box_area: int,
+    min_visibility: float,
+) -> dict:
     """Build a COCO-format dict from a list of M3OT sequence paths."""
     coco = {
         "info": {"description": "M3OT aerial EO dataset for RF-DETR fine-tuning"},
-        "categories": CATEGORIES,
+        "categories": categories,
         "images": [],
         "annotations": [],
     }
@@ -164,7 +164,7 @@ def build_coco_dataset(sequences: list[Path], image_root: Path, modality: str = 
             image_id += 1
             coco["images"].append({
                 "id": image_id,
-                "file_name": str(img_path),   # Absolute path — simplest for training
+                "file_name": str(img_path.resolve()),
                 "width": w,
                 "height": h,
                 "sequence": seq_name,
@@ -174,16 +174,16 @@ def build_coco_dataset(sequences: list[Path], image_root: Path, modality: str = 
             # Add annotations for this frame
             for ann in frame_anns.get(frame_num, []):
                 class_name = ann["class_name"]
-                cat_id = M3OT_CLASS_MAP.get(class_name)
+                cat_id = class_map.get(class_name)
                 if cat_id is None:
                     continue  # Unknown class — skip
 
                 x, y, bw, bh = ann["bbox"]
                 area = bw * bh
 
-                if area < MIN_BOX_AREA:
+                if area < min_box_area:
                     continue
-                if ann["visibility"] < MIN_VISIBILITY:
+                if ann["visibility"] < min_visibility:
                     continue
 
                 ann_id += 1
@@ -202,17 +202,24 @@ def build_coco_dataset(sequences: list[Path], image_root: Path, modality: str = 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input",    type=str, required=True, help="Path to M3OT root dir")
-    parser.add_argument("--output",   type=str, required=True, help="Output splits dir")
+    parser.add_argument("--config",   type=str, default="configs/dataset.yaml", help="Dataset config file")
     parser.add_argument("--modality", type=str, default="RGB", choices=["RGB", "IR"])
     parser.add_argument("--seed",     type=int, default=42)
     args = parser.parse_args()
 
+    ds_cfg = load_dataset_config(args.config)
+
     random.seed(args.seed)
 
-    input_root = Path(args.input)
-    output_dir = Path(args.output)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    input_root = Path(ds_cfg["paths"]["raw"])
+    output_dir = Path(ds_cfg["paths"]["splits"])
+
+    # Build class map and categories from config
+    class_map, categories = build_class_map(ds_cfg["classes"])
+    min_box_area = ds_cfg["filters"]["min_box_area"]
+    min_visibility = ds_cfg["filters"]["min_visibility"]
+
+    split_ratios = ds_cfg["splits"]
 
     # Discover sequences — split by sequence to prevent frame leakage
     modality_dir = input_root / args.modality
@@ -225,8 +232,8 @@ def main():
     # Shuffle and split
     random.shuffle(sequences)
     n = len(sequences)
-    n_train = int(n * 0.70)
-    n_val   = int(n * 0.15)
+    n_train = int(n * split_ratios["train"])
+    n_val   = int(n * split_ratios["val"])
 
     train_seqs = sequences[:n_train]
     val_seqs   = sequences[n_train:n_train + n_val]
@@ -234,22 +241,30 @@ def main():
 
     print(f"Split: {len(train_seqs)} train / {len(val_seqs)} val / {len(test_seqs)} test sequences")
 
-    for split_name, seqs in [("train", train_seqs), ("val", val_seqs), ("test", test_seqs)]:
-        print(f"\nBuilding {split_name} split...")
-        coco = build_coco_dataset(seqs, input_root, modality=args.modality)
+    # rfdetr expects: dataset_dir/{train,valid,test}/_annotations.coco.json
+    split_map = [("train", train_seqs), ("valid", val_seqs), ("test", test_seqs)]
 
-        out_file = output_dir / f"{split_name}.json"
+    for split_name, seqs in split_map:
+        print(f"\nBuilding {split_name} split...")
+        coco = build_coco_dataset(
+            seqs, input_root, args.modality,
+            class_map, categories, min_box_area, min_visibility,
+        )
+
+        split_dir = output_dir / split_name
+        split_dir.mkdir(parents=True, exist_ok=True)
+        out_file = split_dir / "_annotations.coco.json"
         with open(out_file, "w") as f:
             json.dump(coco, f)
 
         n_images = len(coco["images"])
         n_anns   = len(coco["annotations"])
-        print(f"  → {out_file}: {n_images} images, {n_anns} annotations")
+        print(f"  -> {out_file}: {n_images} images, {n_anns} annotations")
 
     print("\nDone. Dataset ready for training.")
-    print(f"  train: {output_dir}/train.json")
-    print(f"  val:   {output_dir}/val.json")
-    print(f"  test:  {output_dir}/test.json")
+    print(f"  train: {output_dir}/train/_annotations.coco.json")
+    print(f"  valid: {output_dir}/valid/_annotations.coco.json")
+    print(f"  test:  {output_dir}/test/_annotations.coco.json")
 
 
 if __name__ == "__main__":

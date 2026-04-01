@@ -27,18 +27,18 @@ uav_perception_training/
 ├── data/
 │   ├── raw/            # M3OT raw download (gitignored)
 │   ├── processed/      # Converted to COCO format
-│   └── splits/         # train/val/test JSON + images
+│   └── splits/         # train/valid/test with _annotations.coco.json
 ├── configs/
 │   ├── train.yaml      # Training hyperparameters
 │   └── dataset.yaml    # Dataset paths and class config
 ├── scripts/
-│   ├── download_m3ot.py        # Dataset download helper
+│   ├── download_m3ot.py        # TODO: Dataset download helper
 │   ├── prepare_dataset.py      # M3OT → COCO conversion
 │   ├── train.py                # Fine-tuning entrypoint
 │   ├── evaluate.py             # mAP evaluation
 │   └── export.py               # ONNX → TensorRT FP16 export
 ├── notebooks/
-│   └── explore_dataset.ipynb   # EDA and sanity checks
+│   └── explore_dataset.ipynb   # TODO: EDA and annotation sanity checks
 ├── models/
 │   └── checkpoints/            # Saved .pth files (gitignored)
 ├── exports/                    # ONNX and .engine files (gitignored)
@@ -51,18 +51,20 @@ uav_perception_training/
 # 1. Install dependencies
 pip install -r requirements.txt
 
-# 2. Download and prepare M3OT dataset
-python scripts/download_m3ot.py --output data/raw
-python scripts/prepare_dataset.py --input data/raw --output data/splits
+# 2. Download M3OT dataset (TODO: download_m3ot.py not yet implemented)
+# Manual download: https://figshare.com/s/01fa8d1163f4e9a5a13a → data/raw/M3OT/
 
-# 3. Train
+# 3. Prepare dataset (reads class map, splits, filters from configs/dataset.yaml)
+python scripts/prepare_dataset.py --config configs/dataset.yaml
+
+# 4. Train
 python scripts/train.py --config configs/train.yaml
 
-# 4. Evaluate
-python scripts/evaluate.py --checkpoint models/checkpoints/best.pth
+# 5. Evaluate
+python scripts/evaluate.py --checkpoint models/checkpoints/checkpoint_best_total.pth
 
-# 5. Export for deployment
-python scripts/export.py --checkpoint models/checkpoints/best.pth --output exports/
+# 6. Export for deployment
+python scripts/export.py --checkpoint models/checkpoints/checkpoint_best_total.pth --output exports/
 ```
 
 ## Deployment

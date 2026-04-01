@@ -6,17 +6,16 @@ The output .engine drops directly into the ROS2 rfdetr_node.
 
 Usage:
     # ONNX + TensorRT (full pipeline)
-    python scripts/export.py --checkpoint models/checkpoints/best.pth --output exports/
+    python scripts/export.py --checkpoint models/checkpoints/checkpoint_best_total.pth --output exports/
 
     # ONNX only (if running on training machine, TensorRT on Orin separately)
-    python scripts/export.py --checkpoint models/checkpoints/best.pth --output exports/ --onnx_only
+    python scripts/export.py --checkpoint models/checkpoints/checkpoint_best_total.pth --output exports/ --onnx_only
 
 Deployment:
     scp exports/uav_perception_training.engine user@orin:/home/dev/models/RF-DETR-SMALL.engine
 """
 
 import argparse
-import os
 from pathlib import Path
 
 import torch
@@ -68,7 +67,7 @@ def simplify_onnx(onnx_path: Path) -> Path:
 
 def export_tensorrt(onnx_path: Path, engine_path: Path, fp16: bool = True, workspace_gb: int = 4):
     """Convert ONNX to TensorRT engine.
-    
+
     Note: TensorRT engines are platform-specific.
     Build on the Orin for deployment on the Orin.
     Build on the 3060 for local testing only.
@@ -116,12 +115,18 @@ def export_tensorrt(onnx_path: Path, engine_path: Path, fp16: bool = True, works
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint",  type=str, required=True)
+    parser.add_argument("--config",      type=str, default="configs/train.yaml")
     parser.add_argument("--output",      type=str, default="exports/")
-    parser.add_argument("--image_size",  type=int, default=512)
     parser.add_argument("--onnx_only",   action="store_true")
-    parser.add_argument("--fp16",        action="store_true", default=True)
+    parser.add_argument("--no-fp16",     action="store_true", help="Disable FP16 for TensorRT")
     parser.add_argument("--workspace_gb", type=int, default=4)
     args = parser.parse_args()
+
+    with open(args.config) as f:
+        cfg = yaml.safe_load(f)
+
+    num_classes = cfg["model"]["num_classes"]
+    resolution = cfg["data"]["resolution"]
 
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -131,21 +136,23 @@ def main():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
     print(f"Loading checkpoint: {checkpoint_path}")
-    from rfdetr import RFDETRBase
+    from rfdetr import RFDETRSmall
 
-    model = RFDETRBase(num_classes=3, resolution=args.image_size)
-    state = torch.load(str(checkpoint_path), map_location="cpu")
-    model.load_state_dict(state.get("model", state))
+    model = RFDETRSmall(
+        pretrain_weights=str(checkpoint_path),
+        num_classes=num_classes,
+    )
     model.eval().cuda()
 
     # ONNX export
     onnx_path = output_dir / "uav_perception_training.onnx"
-    export_onnx(model, onnx_path, args.image_size)
+    export_onnx(model, onnx_path, resolution)
     onnx_path = simplify_onnx(onnx_path)
 
+    fp16 = not getattr(args, "no_fp16", False)
     if not args.onnx_only:
         engine_path = output_dir / "uav_perception_training.engine"
-        export_tensorrt(onnx_path, engine_path, fp16=args.fp16, workspace_gb=args.workspace_gb)
+        export_tensorrt(onnx_path, engine_path, fp16=fp16, workspace_gb=args.workspace_gb)
 
     print("\nExport complete.")
     print(f"  ONNX:   {onnx_path}")

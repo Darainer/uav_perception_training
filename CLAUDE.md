@@ -71,7 +71,7 @@ uav_perception_training/
 ├── data/
 │   ├── raw/                # M3OT raw download (gitignored)
 │   ├── processed/          # Intermediate (gitignored)
-│   └── splits/             # train.json, val.json, test.json (gitignored)
+│   └── splits/             # train/valid/test with _annotations.coco.json (gitignored)
 ├── models/checkpoints/     # .pth files (gitignored)
 ├── exports/                # .onnx and .engine files (gitignored)
 └── logs/                   # Tensorboard logs (gitignored)
@@ -88,19 +88,19 @@ pip install -r requirements.txt
 # 2. Inspect M3OT annotation format BEFORE running prepare_dataset.py
 # Open one .txt file in data/raw/M3OT/annotations/ and verify:
 # - Column order: frame, id, x, y, w, h, conf, class, visibility
-# - Class labels: string or integer? (adjust M3OT_CLASS_MAP in prepare_dataset.py)
+# - Class labels: string or integer? (adjust numeric mapping in prepare_dataset.py)
 
-# 3. Convert dataset
-python scripts/prepare_dataset.py --input data/raw/M3OT --output data/splits
+# 3. Convert dataset (reads paths and class map from configs/dataset.yaml)
+python scripts/prepare_dataset.py --config configs/dataset.yaml
 
 # 4. Train
 python scripts/train.py --config configs/train.yaml
 
 # 5. Evaluate
-python scripts/evaluate.py --checkpoint models/checkpoints/best.pth
+python scripts/evaluate.py --checkpoint models/checkpoints/checkpoint_best_total.pth
 
 # 6. Export ONNX (on 3060)
-python scripts/export.py --checkpoint models/checkpoints/best.pth --onnx_only
+python scripts/export.py --checkpoint models/checkpoints/checkpoint_best_total.pth --onnx_only
 
 # 7. Build TensorRT engine ON THE ORIN (not on 3060 — engines are platform-specific)
 # Copy uav_perception_training.onnx to Orin, then:
@@ -114,9 +114,9 @@ python scripts/export.py --checkpoint models/checkpoints/best.pth --onnx_only
 - [ ] Verify M3OT annotation column format before running prepare_dataset.py
 - [ ] Decide: keep 3 classes or reduce to 2 (drop animal) for initial training
 - [ ] Check whether M3OT figshare download provides RGB and IR as separate dirs or interleaved
-- [ ] prepare_dataset.py uses absolute image paths in COCO JSON — verify rfdetr package handles this
-- [ ] Add download_m3ot.py script (figshare URL: https://figshare.com/s/01fa8d1163f4e9a5a13a)
-- [ ] Notebook: explore_dataset.ipynb for EDA and annotation sanity checks
+- [ ] prepare_dataset.py uses absolute image paths in COCO JSON — verify rfdetr handles this
+- [ ] Add scripts/download_m3ot.py (figshare URL: https://figshare.com/s/01fa8d1163f4e9a5a13a)
+- [ ] Add notebooks/explore_dataset.ipynb — EDA, annotation sanity checks, class distribution
 - [ ] Phase 2: dual-encoder EO+IR architecture (separate streams, cross-attention fusion)
 - [ ] Phase 3: fawn class — needs separate dataset (BIRDSAI or own M4TD captures)
 
