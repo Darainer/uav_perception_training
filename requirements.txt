@@ -1,0 +1,33 @@
+# Core
+torch>=2.1.0
+torchvision>=0.16.0
+supervision>=0.19.0
+
+# RF-DETR
+rfdetr
+
+# Dataset / data handling
+pycocotools
+opencv-python
+Pillow
+numpy
+pandas
+tqdm
+requests
+
+# Training utilities
+tensorboard
+wandb
+
+# Export
+onnx
+onnxruntime
+onnxsim
+
+# Config
+pyyaml
+
+# Dev
+jupyter
+matplotlib
+seaborn

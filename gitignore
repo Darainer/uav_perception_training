@@ -1,0 +1,33 @@
+# Data — never commit raw or processed data
+data/raw/
+data/processed/
+data/splits/
+
+# Model weights and engines
+models/checkpoints/
+exports/
+*.pth
+*.pt
+*.onnx
+*.engine
+
+# Logs
+logs/
+wandb/
+runs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# OS
+.DS_Store
+*.swp

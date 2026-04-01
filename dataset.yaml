@@ -1,0 +1,38 @@
+# Dataset configuration — M3OT aerial EO
+
+dataset:
+  name: M3OT
+  source: figshare
+  modality: EO                  # Phase 1: RGB only. Phase 2: add IR encoder.
+  altitude_range: [100, 120]    # metres AGL
+
+# Class mapping from M3OT → our labels
+# M3OT annotates: pedestrian, car, truck, bus, van, freight_car
+classes:
+  0:
+    name: person
+    m3ot_labels: [pedestrian]
+  1:
+    name: vehicle
+    m3ot_labels: [car, truck, bus, van, freight_car]
+  2:
+    name: animal
+    m3ot_labels: []             # No animal labels in M3OT — will augment later
+
+# Split ratios (applied to M3OT sequences to avoid frame leakage)
+splits:
+  train: 0.70
+  val: 0.15
+  test: 0.15
+  split_by: sequence            # Split on video sequences, not individual frames
+
+# Filtering
+filters:
+  min_box_area: 16              # Drop boxes smaller than 4x4 pixels
+  min_visibility: 0.3           # Drop heavily occluded instances
+
+# Paths (relative to project root)
+paths:
+  raw: data/raw/M3OT
+  processed: data/processed
+  splits: data/splits
